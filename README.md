@@ -2,7 +2,7 @@
 
 An interactive app that benchmarks **under-21 players** against everyone in their position group at Euro 2024 and Copa América 2024, using **StatsBomb open event data**. It is designed the way an academy analyst might present data to coaches: one player at a time, with clear percentiles, a written development summary and honest caveats about sample size.
 
-**Live app:** _add your Streamlit link here_
+**Live app:** https://young-player-benchmarking-f7p2su75cntbyyvartal3s.streamlit.app
 
 ![App screenshot](screenshot.png)
 
