@@ -20,7 +20,7 @@ from step2_metrics import LABELS, LOWER_IS_BETTER, MIN_MINUTES, TEMPLATES
 SMALL_SAMPLE = 360   # under 4 full matches: flag results as provisional
 STRENGTH, DEVELOP = 70, 35  # percentile cut-offs used in the summary
 
-st.set_page_config(page_title="Young Player Benchmarking", layout="wide")
+st.set_page_config(page_title="Young Player Benchmarking & recruitment", layout="wide")
 
 
 @st.cache_data
@@ -92,7 +92,7 @@ def load_season():
 df = load()
 u21 = df[df["is_u21"]].sort_values("minutes", ascending=False)
 
-st.title("Young Player Benchmarking")
+st.title("Young Player Benchmarking & Recruitment Shortlisting")
 st.caption("Euro 2024 & Copa América 2024 · StatsBomb open data · "
            f"U21 outfield players with {MIN_MINUTES}+ minutes, benchmarked against all ages in their position group")
 
