@@ -1,17 +1,23 @@
 """
 Young Player Benchmarking - Euro 2024 & Copa America 2024 (StatsBomb open data)
+
 Pick an under-21 player and see how their per-90 output compares with every player
 in the same position group at the two tournaments, plus a short development summary.
+
 Run locally:  streamlit run app.py
 """
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 
+import os
+
+import recruitment as rec
 from step2_metrics import LABELS, LOWER_IS_BETTER, MIN_MINUTES, TEMPLATES
 
-SMALL_SAMPLE = 360          # under 4 full matches: flag results as provisional
+SMALL_SAMPLE = 360   # under 4 full matches: flag results as provisional
 STRENGTH, DEVELOP = 70, 35  # percentile cut-offs used in the summary
 
 st.set_page_config(page_title="Young Player Benchmarking", layout="wide")
@@ -78,6 +84,11 @@ def summary(row, metrics):
     return lines
 
 
+@st.cache_data
+def load_season():
+    return pd.read_csv(rec.SEASON_FILE) if os.path.exists(rec.SEASON_FILE) else None
+
+
 df = load()
 u21 = df[df["is_u21"]].sort_values("minutes", ascending=False)
 
@@ -85,7 +96,8 @@ st.title("Young Player Benchmarking")
 st.caption("Euro 2024 & Copa América 2024 · StatsBomb open data · "
            f"U21 outfield players with {MIN_MINUTES}+ minutes, benchmarked against all ages in their position group")
 
-tab_player, tab_overview, tab_method = st.tabs(["Player profile", "U21 overview", "Method & limitations"])
+tab_player, tab_overview, tab_recruit, tab_method = st.tabs(
+    ["Player profile", "U21 overview", "Recruitment (2015/16)", "Method & limitations"])
 
 # ---------------- Player profile ----------------
 with tab_player:
@@ -155,6 +167,82 @@ with tab_overview:
     counts = u21["primary_group"].value_counts()
     st.caption("U21 players by position group: " + ", ".join(f"{g} {n}" for g, n in counts.items()) +
                ". Young players are concentrated in attacking roles at senior tournaments.")
+
+# ---------------- Recruitment ----------------
+with tab_recruit:
+    season = load_season()
+    if season is None:
+        st.info("Season data not found. Run step3_recruitment_data.py to create data/season_2015_16.csv.")
+    else:
+        st.markdown("**Case study:** shortlist a **ball-progressing central midfielder** from the 2015/16 "
+                    "Premier League, La Liga, Serie A and Ligue 1 (StatsBomb open data). "
+                    "Adjust what matters most and the ranking updates.")
+        ctrl, res = st.columns([1, 2])
+        with ctrl:
+            st.markdown("##### Profile weights")
+            weights = {d: st.slider(d, 0, 50, w, step=5, key=f"w_{d}") for d, w in rec.DEFAULT_WEIGHTS.items()}
+            min_mins = st.slider("Minimum league minutes", 900, 3000, rec.MIN_MINUTES, step=100)
+            leagues = st.multiselect("Leagues", sorted(season["league"].unique()),
+                                     default=sorted(season["league"].unique()))
+
+        pool = rec.eligible_pool(season, min_mins)
+        pool["Suitability"] = rec.suitability(pool, weights)
+        with ctrl:
+            ref_options = pool.sort_values("player_name")
+            ref_labels = list(ref_options["player_name"] + " (" + ref_options["team"] + ")")
+            default_ref = next((i for i, l in enumerate(ref_labels) if l.startswith("Toni Kroos")), 0)
+            ref_label = st.selectbox("Similarity reference player", ref_labels, index=default_ref)
+            ref_id = ref_options.iloc[ref_labels.index(ref_label)]["player_id"]
+        pool["Similarity"] = rec.similarity(pool, ref_id)
+        shown = pool[pool["league"].isin(leagues) & (pool["player_id"] != ref_id)]
+        shown = shown.sort_values("Suitability", ascending=False)
+
+        with res:
+            n_cm = (season["primary_group"] == rec.ROLE).sum()
+            st.caption(f"{n_cm} central midfielders played in these leagues; {len(pool)} have {min_mins}+ "
+                       f"minutes; {len(shown)} shown after league filter.")
+            st.markdown("##### Shortlist")
+            cards = st.columns(3)
+            for card, (_, p) in zip(cards, shown.head(3).iterrows()):
+                card.metric(f"{p['player_name']}", f"{p['Suitability']:.0f} / 100")
+                card.caption(f"{p['Similarity']:.0f}% similar to reference · {p['team']} · "
+                             f"{p['league']} · {int(p['minutes'])} mins")
+
+            table = shown[["player_name", "team", "league", "minutes", "Suitability", "Similarity"]
+                          + list(rec.DIMENSIONS)].head(25)
+            st.dataframe(table.rename(columns={"player_name": "Player", "team": "Team", "league": "League",
+                                               "minutes": "Minutes"}),
+                         hide_index=True, width="stretch",
+                         column_config={c: st.column_config.NumberColumn(format="%.0f")
+                                        for c in ["Suitability", "Similarity"] + list(rec.DIMENSIONS)})
+
+        st.markdown("##### Candidate vs reference")
+        cand_labels = list(shown["player_name"] + " (" + shown["team"] + ")")
+        if cand_labels:
+            cand_label = st.selectbox("Candidate", cand_labels[:25])
+            cand = shown.iloc[cand_labels.index(cand_label)]
+            ref = pool[pool["player_id"] == ref_id].iloc[0]
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.pyplot(radar([cand[d] for d in rec.DIMENSIONS], list(rec.DIMENSIONS),
+                                compare=[ref[d] for d in rec.DIMENSIONS], compare_name=ref["player_name"],
+                                name=cand["player_name"]))
+            with c2:
+                detail = pd.DataFrame({
+                    "Metric": [LABELS[m] + (" (lower is better)" if m in rec.LOWER_IS_BETTER else "")
+                               for m in rec.METRICS],
+                    "Dimension": [d for d, ms in rec.DIMENSIONS.items() for _ in ms],
+                    cand["player_name"]: [cand[m] for m in rec.METRICS],
+                    ref["player_name"]: [ref[m] for m in rec.METRICS],
+                    "Candidate pct": [int(round(cand[f"{m}_pct"])) for m in rec.METRICS],
+                })
+                st.dataframe(detail, hide_index=True, width="stretch",
+                             column_config={cand["player_name"]: st.column_config.NumberColumn(format="%.2f"),
+                                            ref["player_name"]: st.column_config.NumberColumn(format="%.2f")})
+        st.caption("Dimension scores are the average percentile of their metrics within the eligible pool. "
+                   "Suitability = weighted average of dimensions. Similarity = cosine similarity of "
+                   "standardised profiles, rescaled to 0-100. A shortlist is a starting point for video "
+                   "scouting, not a recommendation on its own. Player ages are not included in this data.")
 
 # ---------------- Method ----------------
 with tab_method:
