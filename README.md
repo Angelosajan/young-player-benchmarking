@@ -4,7 +4,8 @@ An interactive app that benchmarks **under-21 players** against everyone in thei
 
 **Live app:** https://young-player-benchmarking-f7p2su75cntbyyvartal3s.streamlit.app
 
-![App screenshot](screenshot.png)
+![App screenshot](player_profile.png)
+![App screenshot](recruitment.png)
 
 ## What it does
 
